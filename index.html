@@ -33,6 +33,7 @@
         var(--bg);
       color: var(--text);
       min-height: 100vh;
+      overflow: hidden; /* FIX: prevent body scroll */
     }
 
     button, input, select, textarea {
@@ -40,9 +41,10 @@
     }
 
     .app {
-      min-height: 100vh;
+      height: 100vh;
       display: grid;
       grid-template-rows: auto 1fr;
+      overflow: hidden; /* FIX: contain layout */
     }
 
     header {
@@ -153,12 +155,13 @@
       display: grid;
       grid-template-columns: 280px minmax(0, 1fr) 390px;
       min-height: 0;
+      overflow: hidden; /* FIX: contain all panels */
     }
 
     aside, .code-panel {
       border-right: 1px solid var(--line);
       background: rgba(24, 29, 34, 0.9);
-      min-height: calc(100vh - 67px);
+      height: 100%; /* FIX: was min-height causing overflow */
       overflow: auto;
     }
 
@@ -269,6 +272,8 @@
         linear-gradient(90deg, rgba(255, 255, 255, 0.032) 1px, transparent 1px),
         #0c1013;
       background-size: 24px 24px;
+      overflow: hidden; /* FIX: contain workspace */
+      height: 100%;    /* FIX: fill available height */
     }
 
     .toolbar {
@@ -279,6 +284,7 @@
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
       background: rgba(14, 18, 21, 0.92);
+      flex-shrink: 0; /* FIX: toolbar never shrinks */
     }
 
     .segmented {
@@ -313,8 +319,8 @@
       display: grid;
       place-items: center;
       padding: 32px;
-      overflow: auto;
-      min-height: 0;
+      overflow: auto; /* FIX: scroll inside stage if needed */
+      height: 100%;   /* FIX: fill remaining height so screen stays visible */
     }
 
     .device-frame {
@@ -509,6 +515,13 @@
     }
 
     @media (max-width: 760px) {
+      body {
+        overflow: auto; /* allow scroll on mobile */
+      }
+      .app {
+        height: auto;
+        overflow: auto;
+      }
       header {
         align-items: flex-start;
         flex-direction: column;
@@ -521,11 +534,19 @@
 
       main {
         grid-template-columns: 1fr;
+        overflow: auto;
+        height: auto;
       }
 
       aside, .code-panel {
         min-height: auto;
+        height: auto;
         border-right: 0;
+      }
+
+      .workspace {
+        height: auto;
+        overflow: visible;
       }
 
       .toolbar {
@@ -543,6 +564,7 @@
 
       .stage-wrap {
         padding: 18px;
+        height: auto;
       }
 
       .oled-screen {
@@ -799,22 +821,23 @@
       height: 64,
       color: "#38c7d8",
       activeId: 1,
+      frame: 0,
       elements: [
-        { id: 1, type: "text", x: 6, y: 6, w: 56, h: 9, text: "TEMP", size: 1, color: "#38c7d8" },
-        { id: 2, type: "text", x: 6, y: 22, w: 70, h: 18, text: "24.8 C", size: 2, color: "#ffffff" },
+        { id: 1, type: "text", x: 6, y: 6, w: 56, h: 9, text: "TEMP", size: 1, color: "#38c7d8", animation: "none" },
+        { id: 2, type: "text", x: 6, y: 22, w: 70, h: 18, text: "24.8 C", size: 2, color: "#ffffff", animation: "none" },
         { id: 3, type: "rect", x: 86, y: 7, w: 30, h: 22, color: "#80d66b" },
-        { id: 4, type: "progress", x: 8, y: 51, w: 94, h: 8, value: 62, color: "#e5be5d" },
+        { id: 4, type: "progress", x: 8, y: 51, w: 94, h: 8, value: 62, color: "#e5be5d", style: "bar", animation: "none" },
         { id: 5, type: "line", x: 0, y: 45, w: 128, h: 2, color: "#38c7d8" }
       ]
     };
 
     const toolDefaults = {
-      text: { type: "text", x: 10, y: 10, w: 54, h: 10, text: "LABEL", size: 1 },
+      text: { type: "text", x: 10, y: 10, w: 54, h: 10, text: "LABEL", size: 1, animation: "none" },
       rect: { type: "rect", x: 20, y: 14, w: 42, h: 22 },
       fill: { type: "fill", x: 18, y: 18, w: 34, h: 16 },
       line: { type: "line", x: 8, y: 32, w: 64, h: 2 },
       circle: { type: "circle", x: 82, y: 16, w: 20, h: 20 },
-      progress: { type: "progress", x: 12, y: 48, w: 76, h: 8, value: 55 }
+      progress: { type: "progress", x: 12, y: 48, w: 76, h: 8, value: 55, style: "bar", animation: "none" }
     };
 
     function pxX(x) { return (x / state.width) * 100; }
@@ -889,16 +912,75 @@
 
     function drawGfxText(ctx, el, color) {
       const scale = Math.max(1, Number(el.size) || 1);
-      [...String(el.text || "")].forEach((char, index) => {
+      const textW = textPixelSize(el).w;
+      let drawX = el.x;
+      if (el.animation === "blink" && Math.floor(state.frame / 18) % 2 === 0) return;
+      if (el.animation === "marquee") {
+        drawX = state.width - (state.frame % (state.width + textW + 8));
+      }
+      if (el.animation === "bounce") {
+        const travel = Math.max(1, state.width - textW);
+        const pos = state.frame % (travel * 2);
+        drawX = pos > travel ? travel * 2 - pos : pos;
+      }
+      let text = String(el.text || "");
+      if (el.animation === "typewriter") {
+        const visible = state.frame % (text.length + 12);
+        text = text.slice(0, Math.min(text.length, visible));
+      }
+      [...text].forEach((char, index) => {
         const glyph = gfxFont[char] || gfxFont[" "];
         glyph.forEach((row, gy) => {
           [...row].forEach((pixel, gx) => {
             if (pixel !== "1") return;
             ctx.fillStyle = color;
-            ctx.fillRect(el.x + ((index * 6 + gx) * scale), el.y + (gy * scale), scale, scale);
+            ctx.fillRect(drawX + ((index * 6 + gx) * scale), el.y + (gy * scale), scale, scale);
           });
         });
       });
+    }
+
+    function animatedProgressValue(el) {
+      if (el.animation === "indeterminate") return state.frame % 101;
+      if (el.animation === "pulse") {
+        const pos = state.frame % 100;
+        return pos > 50 ? 100 - (pos - 50) * 2 : pos * 2;
+      }
+      return el.value || 0;
+    }
+
+    function drawProgress(ctx, el, color) {
+      const value = animatedProgressValue(el);
+      const fill = Math.max(0, Math.round((el.w - 4) * value / 100));
+      const style = el.style || "bar";
+      if (style === "thin") {
+        drawLinePixels(ctx, el.x, el.y + Math.floor(el.h / 2), el.x + el.w - 1, el.y + Math.floor(el.h / 2), color);
+        drawLinePixels(ctx, el.x, el.y + Math.floor(el.h / 2), el.x + fill, el.y + Math.floor(el.h / 2), color);
+        return;
+      }
+      if (style === "blocks") {
+        drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
+        const blockCount = 8;
+        const gap = 2;
+        const blockW = Math.max(2, Math.floor((el.w - 4 - gap * (blockCount - 1)) / blockCount));
+        const active = Math.round(blockCount * value / 100);
+        ctx.fillStyle = color;
+        for (let i = 0; i < active; i++) {
+          ctx.fillRect(el.x + 2 + i * (blockW + gap), el.y + 2, blockW, Math.max(1, el.h - 4));
+        }
+        return;
+      }
+      if (style === "ticks") {
+        drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
+        ctx.fillStyle = color;
+        for (let x = 2; x < fill + 2; x += 4) {
+          ctx.fillRect(el.x + x, el.y + 2, 2, Math.max(1, el.h - 4));
+        }
+        return;
+      }
+      drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
+      ctx.fillStyle = color;
+      ctx.fillRect(el.x + 2, el.y + 2, fill, Math.max(1, el.h - 4));
     }
 
     function drawPreviewCanvas(canvas) {
@@ -921,10 +1003,7 @@
         } else if (el.type === "circle") {
           drawCirclePixels(ctx, el.x + Math.round(el.w / 2), el.y + Math.round(el.h / 2), Math.round(Math.min(el.w, el.h) / 2), color);
         } else if (el.type === "progress") {
-          const fill = Math.max(0, Math.round((el.w - 4) * (el.value || 0) / 100));
-          drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
-          ctx.fillStyle = color;
-          ctx.fillRect(el.x + 2, el.y + 2, fill, Math.max(1, el.h - 4));
+          drawProgress(ctx, el, color);
         }
       });
     }
@@ -993,8 +1072,8 @@
           <div class="field"><label>Width</label><input data-prop="w" type="number" value="${el.w}"></div>
           <div class="field"><label>Height</label><input data-prop="h" type="number" value="${el.h}"></div>
         </div>
-        ${el.type === "text" ? `<div class="field"><label>Text</label><input data-prop="text" value="${escapeHtml(el.text)}"></div><div class="field"><label>Text scale</label><input data-prop="size" type="number" min="1" max="4" value="${el.size}"></div>` : ""}
-        ${el.type === "progress" ? `<div class="field"><label>Value</label><input data-prop="value" type="range" min="0" max="100" value="${el.value}"></div>` : ""}
+        ${el.type === "text" ? `<div class="field"><label>Text</label><input data-prop="text" value="${escapeHtml(el.text)}"></div><div class="grid-2"><div class="field"><label>Text scale</label><input data-prop="size" type="number" min="1" max="4" value="${el.size}"></div><div class="field"><label>Animation</label><select data-prop="animation"><option value="none"${el.animation === "none" ? " selected" : ""}>None</option><option value="blink"${el.animation === "blink" ? " selected" : ""}>Blink</option><option value="marquee"${el.animation === "marquee" ? " selected" : ""}>Marquee</option><option value="bounce"${el.animation === "bounce" ? " selected" : ""}>Bounce</option><option value="typewriter"${el.animation === "typewriter" ? " selected" : ""}>Typewriter</option></select></div></div>` : ""}
+        ${el.type === "progress" ? `<div class="field"><label>Value</label><input data-prop="value" type="range" min="0" max="100" value="${el.value}"></div><div class="grid-2"><div class="field"><label>Style</label><select data-prop="style"><option value="bar"${el.style === "bar" ? " selected" : ""}>Bar</option><option value="blocks"${el.style === "blocks" ? " selected" : ""}>Blocks</option><option value="ticks"${el.style === "ticks" ? " selected" : ""}>Ticks</option><option value="thin"${el.style === "thin" ? " selected" : ""}>Thin line</option></select></div><div class="field"><label>Animation</label><select data-prop="animation"><option value="none"${el.animation === "none" ? " selected" : ""}>None</option><option value="indeterminate"${el.animation === "indeterminate" ? " selected" : ""}>Loading</option><option value="pulse"${el.animation === "pulse" ? " selected" : ""}>Pulse</option></select></div></div>` : ""}
         <div class="field"><label>OLED color</label><div class="swatches">
           ${["#38c7d8", "#ffffff", "#80d66b", "#e5be5d"].map(c => `<button class="swatch${el.color === c ? " active" : ""}" data-color="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}
         </div></div>
@@ -1002,7 +1081,7 @@
       `;
 
       props.querySelectorAll("[data-prop]").forEach(input => {
-        input.addEventListener("input", event => {
+        input.addEventListener(input.tagName === "SELECT" ? "change" : "input", event => {
           const key = event.target.dataset.prop;
           el[key] = event.target.type === "number" || event.target.type === "range" ? Number(event.target.value) : event.target.value;
           clampElement(el);
@@ -1104,17 +1183,63 @@
         ? isSpi ? "display.begin(0x3C, true);" : "display.begin(0x3C, true);"
         : isSpi ? "display.begin(SSD1306_SWITCHCAPVCC);" : "display.begin(SSD1306_SWITCHCAPVCC, 0x3C);";
 
-      const drawLines = state.elements.map(el => {
+      const hasProgress = state.elements.some(el => el.type === "progress");
+      const hasAnimation = state.elements.some(el => el.animation && el.animation !== "none");
+      const helperCode = hasProgress ? `
+void drawProgressBar(int x, int y, int w, int h, int value, int style) {
+  int fill = max(0, ((w - 4) * value) / 100);
+  if (style == 1) {
+    display.drawRect(x, y, w, h, ${colorConst});
+    int blockCount = 8;
+    int gap = 2;
+    int blockW = max(2, (w - 4 - gap * (blockCount - 1)) / blockCount);
+    int active = (blockCount * value) / 100;
+    for (int i = 0; i < active; i++) {
+      display.fillRect(x + 2 + i * (blockW + gap), y + 2, blockW, max(1, h - 4), ${colorConst});
+    }
+  } else if (style == 2) {
+    display.drawRect(x, y, w, h, ${colorConst});
+    for (int px = 2; px < fill + 2; px += 4) {
+      display.fillRect(x + px, y + 2, 2, max(1, h - 4), ${colorConst});
+    }
+  } else if (style == 3) {
+    display.drawLine(x, y + h / 2, x + w - 1, y + h / 2, ${colorConst});
+    display.drawLine(x, y + h / 2, x + fill, y + h / 2, ${colorConst});
+  } else {
+    display.drawRect(x, y, w, h, ${colorConst});
+    display.fillRect(x + 2, y + 2, fill, max(1, h - 4), ${colorConst});
+  }
+}
+` : "";
+      const styleIds = { bar: 0, blocks: 1, ticks: 2, thin: 3 };
+
+      const drawLines = state.elements.map((el, index) => {
         if (el.type === "text") {
-          return `  display.setTextSize(${el.size});\n  display.setCursor(${el.x}, ${el.y});\n  display.print("${escapeCode(el.text)}");`;
+          const textW = textPixelSize(el).w;
+          const safeText = escapeCode(el.text);
+          if (el.animation === "blink") {
+            return `  if ((frame / 18) % 2 == 1) {\n    display.setTextSize(${el.size});\n    display.setCursor(${el.x}, ${el.y});\n    display.print("${safeText}");\n  }`;
+          }
+          if (el.animation === "marquee") {
+            return `  int textX${index} = SCREEN_WIDTH - (frame % (SCREEN_WIDTH + ${textW + 8}));\n  display.setTextSize(${el.size});\n  display.setCursor(textX${index}, ${el.y});\n  display.print("${safeText}");`;
+          }
+          if (el.animation === "bounce") {
+            return `  int travel${index} = max(1, SCREEN_WIDTH - ${textW});\n  int pos${index} = frame % (travel${index} * 2);\n  int textX${index} = pos${index} > travel${index} ? travel${index} * 2 - pos${index} : pos${index};\n  display.setTextSize(${el.size});\n  display.setCursor(textX${index}, ${el.y});\n  display.print("${safeText}");`;
+          }
+          if (el.animation === "typewriter") {
+            return `  int chars${index} = frame % ${String(el.text || "").length + 12};\n  display.setTextSize(${el.size});\n  display.setCursor(${el.x}, ${el.y});\n  for (int i = 0; i < min(chars${index}, ${String(el.text || "").length}); i++) {\n    display.write("${safeText}"[i]);\n  }`;
+          }
+          return `  display.setTextSize(${el.size});\n  display.setCursor(${el.x}, ${el.y});\n  display.print("${safeText}");`;
         }
         if (el.type === "rect") return `  display.drawRect(${el.x}, ${el.y}, ${el.w}, ${el.h}, ${colorConst});`;
         if (el.type === "fill") return `  display.fillRect(${el.x}, ${el.y}, ${el.w}, ${el.h}, ${colorConst});`;
         if (el.type === "line") return `  display.drawLine(${el.x}, ${el.y}, ${el.x + el.w}, ${el.y}, ${colorConst});`;
         if (el.type === "circle") return `  display.drawCircle(${el.x + Math.round(el.w / 2)}, ${el.y + Math.round(el.h / 2)}, ${Math.round(Math.min(el.w, el.h) / 2)}, ${colorConst});`;
         if (el.type === "progress") {
-          const fill = Math.max(0, Math.round((el.w - 4) * (el.value || 0) / 100));
-          return `  display.drawRect(${el.x}, ${el.y}, ${el.w}, ${el.h}, ${colorConst});\n  display.fillRect(${el.x + 2}, ${el.y + 2}, ${fill}, ${Math.max(1, el.h - 4)}, ${colorConst});`;
+          let valueExpr = `${el.value || 0}`;
+          if (el.animation === "indeterminate") valueExpr = "frame % 101";
+          if (el.animation === "pulse") valueExpr = "((frame % 100) > 50 ? 100 - ((frame % 100) - 50) * 2 : (frame % 100) * 2)";
+          return `  drawProgressBar(${el.x}, ${el.y}, ${el.w}, ${el.h}, ${valueExpr}, ${styleIds[el.style || "bar"]});`;
         }
         return "";
       }).join("\n");
@@ -1139,14 +1264,16 @@ void setup() {
 
 void loop() {
   drawDashboard();
-  delay(250);
+  delay(80);
 }
 
 void drawDashboard() {
+  unsigned long frame = millis() / 80;
   display.clearDisplay();
 ${drawLines}
   display.display();
-}`;
+}
+${helperCode}`;
     }
 
     function escapeHtml(value) {
@@ -1193,6 +1320,12 @@ ${drawLines}
     };
 
     render();
+    setInterval(() => {
+      state.frame = (state.frame + 1) % 10000;
+      if (state.elements.some(el => el.animation && el.animation !== "none")) {
+        renderDesign();
+      }
+    }, 80);
   </script>
 </body>
 </html>
