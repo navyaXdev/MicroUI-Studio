@@ -359,6 +359,29 @@
       background-size: calc(100% / 16) calc(100% / 8);
     }
 
+    .screen-content {
+      position: absolute;
+      inset: 0;
+      transform-origin: center;
+    }
+
+    .preview-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      transform-origin: center;
+    }
+
+    .screen-content.rot-1 { transform: rotate(90deg); }
+    .screen-content.rot-2 { transform: rotate(180deg); }
+    .screen-content.rot-3 { transform: rotate(270deg); }
+    .preview-canvas.rot-1 { transform: rotate(90deg); }
+    .preview-canvas.rot-2 { transform: rotate(180deg); }
+    .preview-canvas.rot-3 { transform: rotate(270deg); }
+
     .pixel-ruler {
       display: flex;
       justify-content: space-between;
@@ -371,8 +394,10 @@
       position: absolute;
       outline: 1px solid transparent;
       cursor: move;
-      color: #fff;
-      overflow: hidden;
+      overflow: visible;
+      background: transparent !important;
+      border: 0 !important;
+      color: transparent !important;
     }
 
     .element.active {
@@ -380,46 +405,7 @@
       outline-offset: 2px;
     }
 
-    .el-text {
-      font-family: "Courier New", monospace;
-      font-size: var(--font-size);
-      line-height: 1;
-      white-space: nowrap;
-      text-shadow: 0 0 8px currentColor;
-    }
-
-    .el-rect {
-      border: 2px solid currentColor;
-    }
-
-    .el-fill {
-      background: currentColor;
-    }
-
-    .el-line {
-      height: 2px !important;
-      background: currentColor;
-      transform-origin: left center;
-    }
-
-    .el-circle {
-      border-radius: 50%;
-      border: 2px solid currentColor;
-    }
-
-    .el-progress {
-      border: 1px solid currentColor;
-      border-radius: 2px;
-    }
-
-    .el-progress::after {
-      content: "";
-      position: absolute;
-      inset: 2px;
-      width: var(--fill, 56%);
-      background: currentColor;
-      box-shadow: 0 0 8px currentColor;
-    }
+    .el-line { height: 2px !important; }
 
     .statusbar {
       display: grid;
@@ -631,6 +617,24 @@
                 <option>SPI</option>
               </select>
             </div>
+            <div class="field">
+              <label for="rotation">Rotation</label>
+              <select id="rotation">
+                <option value="0">0 deg</option>
+                <option value="1">90 deg</option>
+                <option value="2">180 deg</option>
+                <option value="3">270 deg</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="previewZoom">Preview zoom</label>
+              <select id="previewZoom">
+                <option value="3">3x real pixels</option>
+                <option value="4">4x real pixels</option>
+                <option value="5" selected>5x real pixels</option>
+                <option value="6">6x real pixels</option>
+              </select>
+            </div>
           </div>
         </section>
 
@@ -668,7 +672,7 @@
         <div class="stage-wrap">
           <div>
             <div class="device-frame">
-              <div class="oled-screen show-grid" id="screen" aria-label="OLED design canvas"></div>
+              <div class="oled-screen" id="screen" aria-label="OLED design canvas"></div>
             </div>
             <div class="pixel-ruler">
               <span id="leftRuler">0,0</span>
@@ -713,8 +717,82 @@
     const rightRuler = document.getElementById("rightRuler");
     const library = document.getElementById("library");
     const wireMode = document.getElementById("wireMode");
+    const rotation = document.getElementById("rotation");
+    const previewZoom = document.getElementById("previewZoom");
     const copyBtn = document.getElementById("copyBtn");
     const copyBtnHtml = copyBtn.innerHTML;
+
+    const gfxFont = {
+      " ": ["00000","00000","00000","00000","00000","00000","00000"],
+      "!": ["00100","00100","00100","00100","00100","00000","00100"],
+      ".": ["00000","00000","00000","00000","00000","01100","01100"],
+      "-": ["00000","00000","00000","11111","00000","00000","00000"],
+      "_": ["00000","00000","00000","00000","00000","00000","11111"],
+      ":": ["00000","01100","01100","00000","01100","01100","00000"],
+      "/": ["00001","00010","00100","01000","10000","00000","00000"],
+      "0": ["01110","10001","10011","10101","11001","10001","01110"],
+      "1": ["00100","01100","00100","00100","00100","00100","01110"],
+      "2": ["01110","10001","00001","00010","00100","01000","11111"],
+      "3": ["11110","00001","00001","01110","00001","00001","11110"],
+      "4": ["00010","00110","01010","10010","11111","00010","00010"],
+      "5": ["11111","10000","11110","00001","00001","10001","01110"],
+      "6": ["00110","01000","10000","11110","10001","10001","01110"],
+      "7": ["11111","00001","00010","00100","01000","01000","01000"],
+      "8": ["01110","10001","10001","01110","10001","10001","01110"],
+      "9": ["01110","10001","10001","01111","00001","00010","01100"],
+      "A": ["01110","10001","10001","11111","10001","10001","10001"],
+      "B": ["11110","10001","10001","11110","10001","10001","11110"],
+      "C": ["01110","10001","10000","10000","10000","10001","01110"],
+      "D": ["11110","10001","10001","10001","10001","10001","11110"],
+      "E": ["11111","10000","10000","11110","10000","10000","11111"],
+      "F": ["11111","10000","10000","11110","10000","10000","10000"],
+      "G": ["01110","10001","10000","10111","10001","10001","01111"],
+      "H": ["10001","10001","10001","11111","10001","10001","10001"],
+      "I": ["01110","00100","00100","00100","00100","00100","01110"],
+      "J": ["00111","00010","00010","00010","00010","10010","01100"],
+      "K": ["10001","10010","10100","11000","10100","10010","10001"],
+      "L": ["10000","10000","10000","10000","10000","10000","11111"],
+      "M": ["10001","11011","10101","10101","10001","10001","10001"],
+      "N": ["10001","11001","10101","10011","10001","10001","10001"],
+      "O": ["01110","10001","10001","10001","10001","10001","01110"],
+      "P": ["11110","10001","10001","11110","10000","10000","10000"],
+      "Q": ["01110","10001","10001","10001","10101","10010","01101"],
+      "R": ["11110","10001","10001","11110","10100","10010","10001"],
+      "S": ["01111","10000","10000","01110","00001","00001","11110"],
+      "T": ["11111","00100","00100","00100","00100","00100","00100"],
+      "U": ["10001","10001","10001","10001","10001","10001","01110"],
+      "V": ["10001","10001","10001","10001","10001","01010","00100"],
+      "W": ["10001","10001","10001","10101","10101","10101","01010"],
+      "X": ["10001","10001","01010","00100","01010","10001","10001"],
+      "Y": ["10001","10001","01010","00100","00100","00100","00100"],
+      "Z": ["11111","00001","00010","00100","01000","10000","11111"],
+      "a": ["00000","00000","01110","00001","01111","10001","01111"],
+      "b": ["10000","10000","10110","11001","10001","10001","11110"],
+      "c": ["00000","00000","01110","10000","10000","10001","01110"],
+      "d": ["00001","00001","01101","10011","10001","10001","01111"],
+      "e": ["00000","00000","01110","10001","11111","10000","01110"],
+      "f": ["00110","01001","01000","11100","01000","01000","01000"],
+      "g": ["00000","01111","10001","10001","01111","00001","01110"],
+      "h": ["10000","10000","10110","11001","10001","10001","10001"],
+      "i": ["00100","00000","01100","00100","00100","00100","01110"],
+      "j": ["00010","00000","00110","00010","00010","10010","01100"],
+      "k": ["10000","10000","10010","10100","11000","10100","10010"],
+      "l": ["01100","00100","00100","00100","00100","00100","01110"],
+      "m": ["00000","00000","11010","10101","10101","10101","10101"],
+      "n": ["00000","00000","10110","11001","10001","10001","10001"],
+      "o": ["00000","00000","01110","10001","10001","10001","01110"],
+      "p": ["00000","00000","11110","10001","11110","10000","10000"],
+      "q": ["00000","00000","01101","10011","01111","00001","00001"],
+      "r": ["00000","00000","10110","11001","10000","10000","10000"],
+      "s": ["00000","00000","01111","10000","01110","00001","11110"],
+      "t": ["01000","01000","11100","01000","01000","01001","00110"],
+      "u": ["00000","00000","10001","10001","10001","10011","01101"],
+      "v": ["00000","00000","10001","10001","10001","01010","00100"],
+      "w": ["00000","00000","10001","10101","10101","10101","01010"],
+      "x": ["00000","00000","10001","01010","00100","01010","10001"],
+      "y": ["00000","00000","10001","10001","01111","00001","01110"],
+      "z": ["00000","00000","11111","00010","00100","01000","11111"]
+    };
 
     const state = {
       width: 128,
@@ -746,6 +824,111 @@
       return state.elements.find(el => el.id === state.activeId) || state.elements[0];
     }
 
+    function textPixelSize(el) {
+      const text = String(el.text || "");
+      const scale = Math.max(1, Number(el.size) || 1);
+      return {
+        w: Math.max(scale, ((text.length * 6) - 1) * scale),
+        h: 8 * scale
+      };
+    }
+
+    function syncTextBounds(el) {
+      if (el.type !== "text") return;
+      const size = textPixelSize(el);
+      el.w = size.w;
+      el.h = size.h;
+    }
+
+    function drawPixel(ctx, x, y, color) {
+      if (x < 0 || y < 0 || x >= state.width || y >= state.height) return;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+
+    function drawLinePixels(ctx, x0, y0, x1, y1, color) {
+      x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+      const dx = Math.abs(x1 - x0);
+      const sx = x0 < x1 ? 1 : -1;
+      const dy = -Math.abs(y1 - y0);
+      const sy = y0 < y1 ? 1 : -1;
+      let err = dx + dy;
+      while (true) {
+        drawPixel(ctx, x0, y0, color);
+        if (x0 === x1 && y0 === y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+      }
+    }
+
+    function drawRectPixels(ctx, x, y, w, h, color) {
+      drawLinePixels(ctx, x, y, x + w - 1, y, color);
+      drawLinePixels(ctx, x, y + h - 1, x + w - 1, y + h - 1, color);
+      drawLinePixels(ctx, x, y, x, y + h - 1, color);
+      drawLinePixels(ctx, x + w - 1, y, x + w - 1, y + h - 1, color);
+    }
+
+    function drawCirclePixels(ctx, cx, cy, radius, color) {
+      let x = Math.round(radius);
+      let y = 0;
+      let err = 0;
+      while (x >= y) {
+        [[x, y], [y, x], [-y, x], [-x, y], [-x, -y], [-y, -x], [y, -x], [x, -y]].forEach(([dx, dy]) => {
+          drawPixel(ctx, cx + dx, cy + dy, color);
+        });
+        y++;
+        if (err <= 0) {
+          err += 2 * y + 1;
+        } else {
+          x--;
+          err += 2 * (y - x) + 1;
+        }
+      }
+    }
+
+    function drawGfxText(ctx, el, color) {
+      const scale = Math.max(1, Number(el.size) || 1);
+      [...String(el.text || "")].forEach((char, index) => {
+        const glyph = gfxFont[char] || gfxFont[" "];
+        glyph.forEach((row, gy) => {
+          [...row].forEach((pixel, gx) => {
+            if (pixel !== "1") return;
+            ctx.fillStyle = color;
+            ctx.fillRect(el.x + ((index * 6 + gx) * scale), el.y + (gy * scale), scale, scale);
+          });
+        });
+      });
+    }
+
+    function drawPreviewCanvas(canvas) {
+      canvas.width = state.width;
+      canvas.height = state.height;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, state.width, state.height);
+      state.elements.forEach(el => {
+        const color = el.color || state.color;
+        if (el.type === "text") {
+          drawGfxText(ctx, el, color);
+        } else if (el.type === "rect") {
+          drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
+        } else if (el.type === "fill") {
+          ctx.fillStyle = color;
+          ctx.fillRect(el.x, el.y, el.w, el.h);
+        } else if (el.type === "line") {
+          drawLinePixels(ctx, el.x, el.y, el.x + el.w, el.y, color);
+        } else if (el.type === "circle") {
+          drawCirclePixels(ctx, el.x + Math.round(el.w / 2), el.y + Math.round(el.h / 2), Math.round(Math.min(el.w, el.h) / 2), color);
+        } else if (el.type === "progress") {
+          const fill = Math.max(0, Math.round((el.w - 4) * (el.value || 0) / 100));
+          drawRectPixels(ctx, el.x, el.y, el.w, el.h, color);
+          ctx.fillStyle = color;
+          ctx.fillRect(el.x + 2, el.y + 2, fill, Math.max(1, el.h - 4));
+        }
+      });
+    }
+
     function render() {
       renderDesign();
       renderProperties();
@@ -753,8 +936,16 @@
 
     function renderDesign() {
       screen.style.setProperty("--screen-ratio", `${state.width} / ${state.height}`);
+      screen.style.width = `min(86vw, ${state.width * Number(previewZoom.value)}px)`;
       screen.innerHTML = "";
+      const canvas = document.createElement("canvas");
+      canvas.className = `preview-canvas rot-${rotation.value}`;
+      screen.appendChild(canvas);
+      const content = document.createElement("div");
+      content.className = `screen-content rot-${rotation.value}`;
+      screen.appendChild(content);
       state.elements.forEach(el => {
+        syncTextBounds(el);
         const node = document.createElement("div");
         node.className = `element el-${el.type}${el.id === state.activeId ? " active" : ""}`;
         node.dataset.id = el.id;
@@ -765,10 +956,10 @@
         node.style.color = el.color || state.color;
         node.style.setProperty("--font-size", `${Math.max(8, el.size * 8)}px`);
         node.style.setProperty("--fill", `${el.value || 55}%`);
-        if (el.type === "text") node.textContent = el.text;
         node.addEventListener("pointerdown", startDrag);
-        screen.appendChild(node);
+        content.appendChild(node);
       });
+      drawPreviewCanvas(canvas);
 
       renderLayers();
       renderCode();
@@ -941,6 +1132,7 @@ ${constructor}
 void setup() {
   ${isSpi ? "SPI.begin();" : "Wire.begin();"}
   ${begin}
+  display.setRotation(${rotation.value});
   display.clearDisplay();
   display.setTextColor(${colorConst});
 }
@@ -980,6 +1172,8 @@ ${drawLines}
     customH.addEventListener("input", setSize);
     library.addEventListener("change", renderCode);
     wireMode.addEventListener("change", renderCode);
+    rotation.addEventListener("change", renderDesign);
+    previewZoom.addEventListener("change", renderDesign);
 
     document.getElementById("gridBtn").onclick = () => screen.classList.toggle("show-grid");
     document.getElementById("resetBtn").onclick = () => location.reload();
