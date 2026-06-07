@@ -11,7 +11,6 @@ export function generateAdafruitCode(libraryVal, wireModeVal, rotationVal) {
     const styleIds = { bar: 0, blocks: 1, ticks: 2, thin: 3 };
 
     const drawLines = state.elements.map((el, index) => {
-        // FIX: Arduino code generator me bhi width (w) aur position (x) ko strictly max 128 ke andar lock kar diya
         const safeW = Math.max(1, Math.min(128, Math.round(el.w || 1)));
         const safeX = Math.max(0, Math.min(128 - safeW, Math.round(el.x || 0)));
 
@@ -19,26 +18,20 @@ export function generateAdafruitCode(libraryVal, wireModeVal, rotationVal) {
             const safeText = escapeCode(el.text);
             const scale = el.size;
             
-            // FIX: Generated code me Word Wrap status print karne ka block set kiya
             let renderingBlock = "";
             if (el.wrap) {
-                renderingBlock = `  // Word wrap mode enabled for multi-line execution\n  display.setTextSize(${scale});\n  display.setTextWrap(true);\n  display.setCursor(${safeX}, ${el.y});\n  display.print("${safeText}");`;
+                renderingBlock = `  display.setTextSize(${scale});\n  display.setTextWrap(true);\n  display.setCursor(${safeX}, ${el.y});\n  display.print("${safeText}");`;
             } else {
                 renderingBlock = `  display.setTextSize(${scale});\n  display.setTextWrap(false);\n  display.setCursor(${safeX}, ${el.y});\n  display.print("${safeText}");`;
             }
             
             if (el.animation === "blink") {
-                return `  if ((frame / 18) % 2 == 1) {\n  ${renderingBlock}\n  }`;
+                return `  if (((millis() / 80) / 18) % 2 == 1) {\n  ${renderingBlock}\n  }`;
+            } else if (el.animation === "marquee" || el.animation === "bounce" || el.animation === "typewriter" || el.animation === "wave") {
+                return `  drawClippedText("${safeText}", ${safeX}, ${el.y}, ${safeW}, ${el.h}, ${scale}, "${el.animation}", frame, ${el.animSpeed || 1.0});`;
+            } else {
+                return `  drawClippedText("${safeText}", ${safeX}, ${el.y}, ${safeW}, ${el.h}, ${scale}, "none", frame, 1.0);`;
             }
-            if (el.animation === "flash") {
-                return `  if ((frame / 6) % 2 == 1) {\n  ${renderingBlock}\n  }`;
-            }
-            // animations jo selection boxes ke dynamic bounds trace karte hain
-            if (el.animation === "marquee" || el.animation === "bounce" || el.animation === "typewriter" || el.animation === "wave") {
-                return `  drawClippedText("${safeText}", ${safeX}, ${el.y}, ${safeW}, ${el.h}, ${scale}, "${el.animation}", frame);`;
-            }
-            
-            return `  drawClippedText("${safeText}", ${safeX}, ${el.y}, ${safeW}, ${el.h}, ${scale}, "none", frame);`;
         }
         if (el.type === "rect") return `  display.drawRect(${safeX}, ${el.y}, ${safeW}, ${el.h}, ${colorConst});`;
         if (el.type === "fill") return `  display.fillRect(${safeX}, ${el.y}, ${safeW}, ${el.h}, ${colorConst});`;
@@ -46,8 +39,8 @@ export function generateAdafruitCode(libraryVal, wireModeVal, rotationVal) {
         if (el.type === "circle") return `  display.drawCircle(${safeX + Math.round(safeW / 2)}, ${el.y + Math.round(el.h / 2)}, ${Math.round(Math.min(safeW, el.h) / 2)}, ${colorConst});`;
         if (el.type === "progress") {
             let valueExpr = `${el.value || 0}`;
-            if (el.animation === "indeterminate") valueExpr = "frame % 101";
-            if (el.animation === "pulse") valueExpr = "((frame % 100) > 50 ? 100 - ((frame % 100) - 50) * 2 : (frame % 100) * 2)";
+            if (el.animation === "indeterminate") valueExpr = "(frame * " + (el.animSpeed || 1) + ") % 101";
+            if (el.animation === "pulse") valueExpr = "(((int)(frame * " + (el.animSpeed || 1) + ") % 100) > 50 ? 100 - (((int)(frame * " + (el.animSpeed || 1) + ") % 100) - 50) * 2 : ((int)(frame * " + (el.animSpeed || 1) + ") % 100) * 2)";
             return `  drawProgressBar(${safeX}, ${el.y}, ${safeW}, ${el.h}, ${valueExpr}, ${styleIds[el.style || "bar"]});`;
         }
         return "";
@@ -58,39 +51,32 @@ export function generateAdafruitCode(libraryVal, wireModeVal, rotationVal) {
         : "\n#define OLED_RESET -1\n";
         
     const constructor = libraryVal.includes("SH110X")
-        ? (isSpi
-            ? `Adafruit_SH1106G display(${state.width}, ${state.height}, &SPI, OLED_DC, OLED_RESET, OLED_CS);`
-            : `Adafruit_SH1106G display(${state.width}, ${state.height}, &Wire, OLED_RESET);`)
-        : (isSpi
-            ? `Adafruit_SSD1306 display(${state.width}, ${state.height}, &SPI, OLED_DC, OLED_RESET, OLED_CS);`
-            : `Adafruit_SSD1306 display(${state.width}, ${state.height}, &Wire, OLED_RESET);`);
+        ? (isSpi ? `Adafruit_SH1106G display(${state.width}, ${state.height}, &SPI, OLED_DC, OLED_RESET, OLED_CS);` : `Adafruit_SH1106G display(${state.width}, ${state.height}, &Wire, OLED_RESET);`)
+        : (isSpi ? `Adafruit_SSD1306 display(${state.width}, ${state.height}, &SPI, OLED_DC, OLED_RESET, OLED_CS);` : `Adafruit_SSD1306 display(${state.width}, ${state.height}, &Wire, OLED_RESET);`);
             
-    const begin = libraryVal.includes("SH110X")
-        ? "display.begin(0x3C, true);"
-        : (isSpi ? "display.begin(SSD1306_SWITCHCAPVCC);" : "display.begin(SSD1306_SWITCHCAPVCC, 0x3C);");
+    const begin = libraryVal.includes("SH110X") ? "display.begin(0x3C, true);" : (isSpi ? "display.begin(SSD1306_SWITCHCAPVCC);" : "display.begin(SSD1306_SWITCHCAPVCC, 0x3C);");
 
     const hasProgress = state.elements.some(el => el.type === "progress");
     
-    // Pro Forward Declarations to fix PlatformIO compiling scope issue completely
-    const declarationBlock = `// Forward Declarations\nvoid drawDashboard();\nvoid drawClippedText(String text, int bx, int by, int bw, int bh, int scale, String anim, unsigned long frame);\n${hasProgress ? "void drawProgressBar(int x, int y, int w, int h, int value, int style);\n" : ""}`;
+    const declarationBlock = `// Forward Declarations\nvoid drawDashboard();\nvoid drawClippedText(String text, int bx, int by, int bw, int bh, int scale, String anim, unsigned long frame, float speed);\n${hasProgress ? "void drawProgressBar(int x, int y, int w, int h, int value, int style);\n" : ""}`;
 
-    // Helper functions for ProgressBar and Clipping boundary box mapping on hardware
     const helperCode = `
-void drawClippedText(String text, int bx, int by, int bw, int bh, int scale, String anim, unsigned long frame) {
+void drawClippedText(String text, int bx, int by, int bw, int bh, int scale, String anim, unsigned long frame, float speed) {
   int textW = text.length() * 6 * scale;
   int drawX = bx;
   int drawY = by;
+  unsigned long vFrame = frame * speed;
 
   if (anim == "marquee") {
-    drawX = bx + bw - (frame % (bw + textW + 4));
+    drawX = bx + bw - (vFrame % (bw + textW + 4));
   } else if (anim == "bounce") {
     int travel = max(1, bw - textW);
-    int pos = frame % (travel * 2);
+    int pos = vFrame % (travel * 2);
     drawX = bx + (pos > travel ? travel * 2 - pos : pos);
   } else if (anim == "wave") {
-    drawY = by + (int)(sin(frame * 0.3) * 3);
+    drawY = by + (int)(sin(vFrame * 0.3) * 3);
   } else if (anim == "typewriter") {
-    int visible = frame % (text.length() + 12);
+    int visible = vFrame % (text.length() + 12);
     if (visible < text.length()) {
       text = text.substring(0, visible);
     }
@@ -100,8 +86,6 @@ void drawClippedText(String text, int bx, int by, int bw, int bh, int scale, Str
   for (int i = 0; i < text.length(); i++) {
     char c = text[i];
     int charWidth = 6 * scale;
-    
-    // Strict Hardware Clipping Check
     if (currentX + charWidth > bx && currentX < bx + bw) {
       display.setTextSize(scale);
       display.setCursor(currentX, drawY);

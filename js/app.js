@@ -1,4 +1,4 @@
-import { state, toolDefaults, activeElement, clampElement, syncTextBounds } from './state.js';
+import { state, toolDefaults, activeElement, clampElement, syncTextBounds, textPixelSize } from './state.js';
 import { drawPreviewCanvas } from './renderer.js';
 import { generateAdafruitCode } from './codeGen.js';
 
@@ -66,6 +66,10 @@ function renderDesign() {
         node.style.color = el.color || state.color;
         node.style.setProperty("--font-size", `${Math.max(8, el.size * 8)}px`);
         node.style.setProperty("--fill", `${el.value || 55}%`);
+        
+        // CLEAN: Individual element layout transform block completely cleared
+        node.style.transform = "none";
+        
         node.addEventListener("pointerdown", startDrag);
         content.appendChild(node);
     });
@@ -91,8 +95,6 @@ function renderLayers() {
     });
 }
 
-// app.js ke renderProperties() function ko poore tarike se isse replace kar dein:
-
 function renderProperties() {
     const el = activeElement();
     if (!el) {
@@ -101,6 +103,7 @@ function renderProperties() {
     }
     
     const isText = el.type === "text";
+    const hasAnim = el.animation && el.animation !== "none";
     
     props.innerHTML = `
     <div class="grid-2">
@@ -109,6 +112,13 @@ function renderProperties() {
         <div class="field"><label>Width</label><input data-prop="w" type="number" value="${el.w}" min="1" max="128"></div>
         <div class="field"><label>Height</label><input data-prop="h" type="number" value="${el.h}" disabled></div>
     </div>
+
+    ${hasAnim ? `
+    <div class="field">
+        <label>Animation Speed (${el.animSpeed || 1}x)</label>
+        <input data-prop="animSpeed" type="range" min="0.1" max="5" step="0.1" value="${el.animSpeed || 1}">
+    </div>` : ""}
+
     ${isText ? `
     <div class="field" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
         <input data-prop="wrap" type="checkbox" ${el.wrap ? "checked" : ""} style="width: auto; min-height: auto; cursor: pointer;">
@@ -143,10 +153,10 @@ function renderProperties() {
                 el[key] = event.target.type === "number" || event.target.type === "range" ? Number(event.target.value) : event.target.value;
             }
             
-            // Sync text matrix bounds tightly during input processing
             clampElement(el);
             if (el.type === "text") syncTextBounds(el);
             renderDesign();
+            if (key === "animation") renderProperties();
         });
     });
 
@@ -163,6 +173,7 @@ function renderProperties() {
         render();
     };
 }
+
 function startDrag(event) {
     const el = state.elements.find(item => item.id === Number(event.currentTarget.dataset.id));
     if(!el) return;
@@ -212,7 +223,7 @@ function setSize() {
 // Event Listeners setup
 document.querySelectorAll("[data-tool]").forEach(btn => btn.addEventListener("click", () => {
     const type = btn.dataset.tool;
-    const next = { ...toolDefaults[type], id: Date.now(), color: state.color };
+    const next = { ...toolDefaults[type], id: Date.now(), color: state.color, wrap: false, animSpeed: 1 };
     clampElement(next);
     state.elements.push(next);
     state.activeId = next.id;
