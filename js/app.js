@@ -41,6 +41,8 @@ function render() {
 
 function renderDesign() {
     screen.style.setProperty("--screen-ratio", `${state.width} / ${state.height}`);
+    screen.style.setProperty("--grid-w", state.width);
+    screen.style.setProperty("--grid-h", state.height);
     screen.style.width = `min(86vw, ${state.width * Number(previewZoom.value)}px)`;
     screen.innerHTML = "";
     
@@ -89,20 +91,29 @@ function renderLayers() {
     });
 }
 
+// app.js ke renderProperties() function ko poore tarike se isse replace kar dein:
+
 function renderProperties() {
     const el = activeElement();
     if (!el) {
         props.innerHTML = `<p class="hint">Add an element to edit its properties.</p>`;
         return;
     }
+    
+    const isText = el.type === "text";
+    
     props.innerHTML = `
     <div class="grid-2">
         <div class="field"><label>X</label><input data-prop="x" type="number" value="${el.x}"></div>
         <div class="field"><label>Y</label><input data-prop="y" type="number" value="${el.y}"></div>
-        <div class="field"><label>Width</label><input data-prop="w" type="number" value="${el.w}"></div>
-        <div class="field"><label>Height</label><input data-prop="h" type="number" value="${el.h}"></div>
+        <div class="field"><label>Width</label><input data-prop="w" type="number" value="${el.w}" min="1" max="128"></div>
+        <div class="field"><label>Height</label><input data-prop="h" type="number" value="${el.h}" disabled></div>
     </div>
-    ${el.type === "text" ? `
+    ${isText ? `
+    <div class="field" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <input data-prop="wrap" type="checkbox" ${el.wrap ? "checked" : ""} style="width: auto; min-height: auto; cursor: pointer;">
+        <label style="margin-bottom: 0; cursor: pointer; user-select: none;">Word Wrap (Auto New Line)</label>
+    </div>
     <div class="field"><label>Text</label><input data-prop="text" value="${escapeHtml(el.text)}"></div>
     <div class="grid-2">
         <div class="field"><label>Text scale</label><input data-prop="size" type="number" min="1" max="4" value="${el.size}"></div>
@@ -110,11 +121,8 @@ function renderProperties() {
             <select data-prop="animation">
                 <option value="none"${el.animation === "none" ? " selected" : ""}>None</option>
                 <option value="blink"${el.animation === "blink" ? " selected" : ""}>Blink</option>
-                <option value="flash"${el.animation === "flash" ? " selected" : ""}>Flash (Fast)</option>
                 <option value="marquee"${el.animation === "marquee" ? " selected" : ""}>Marquee</option>
                 <option value="bounce"${el.animation === "bounce" ? " selected" : ""}>Bounce</option>
-                <option value="wave"${el.animation === "wave" ? " selected" : ""}>Wave Vertical</option>
-                <option value="glitch"${el.animation === "glitch" ? " selected" : ""}>Glitch</option>
                 <option value="typewriter"${el.animation === "typewriter" ? " selected" : ""}>Typewriter</option>
             </select>
         </div>
@@ -129,8 +137,15 @@ function renderProperties() {
     props.querySelectorAll("[data-prop]").forEach(input => {
         input.addEventListener(input.tagName === "SELECT" ? "change" : "input", event => {
             const key = event.target.dataset.prop;
-            el[key] = event.target.type === "number" || event.target.type === "range" ? Number(event.target.value) : event.target.value;
+            if (event.target.type === "checkbox") {
+                el[key] = event.target.checked;
+            } else {
+                el[key] = event.target.type === "number" || event.target.type === "range" ? Number(event.target.value) : event.target.value;
+            }
+            
+            // Sync text matrix bounds tightly during input processing
             clampElement(el);
+            if (el.type === "text") syncTextBounds(el);
             renderDesign();
         });
     });
@@ -148,9 +163,9 @@ function renderProperties() {
         render();
     };
 }
-
 function startDrag(event) {
     const el = state.elements.find(item => item.id === Number(event.currentTarget.dataset.id));
+    if(!el) return;
     state.activeId = el.id;
     const rect = screen.getBoundingClientRect();
     const start = { x: event.clientX, y: event.clientY, elX: el.x, elY: el.y };
@@ -210,6 +225,7 @@ document.querySelectorAll("[data-mode]").forEach(btn => {
         btn.classList.add("active");
         const mode = btn.dataset.mode;
         state.color = mode === "blue" ? "#38c7d8" : mode === "white" ? "#ffffff" : "#80d66b";
+        renderDesign();
     });
 });
 
@@ -243,10 +259,8 @@ document.getElementById("downloadBtn").onclick = () => {
 // Initial Execution
 render();
 
-// Game Loop Selector for Animations
+// Game Loop Setup
 setInterval(() => {
     state.frame = (state.frame + 1) % 10000;
-    if (state.elements.some(el => el.animation && el.animation !== "none")) {
-        renderDesign();
-    }
+    renderDesign();
 }, 80);

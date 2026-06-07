@@ -352,10 +352,11 @@ select:focus, input:focus, textarea:focus {
 }
 
 .oled-screen.show-grid {
-    background-image:
-    linear-gradient(rgba(56, 199, 216, 0.18) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 199, 216, 0.18) 1px, transparent 1px);
-    background-size: calc(100% / 16) calc(100% / 8);
+    background-image: 
+        linear-gradient(rgba(56, 199, 216, 0.25) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 199, 216, 0.25) 1px, transparent 1px);
+    /* FIX: Canvas grid rules ko explicitly pixel-to-pixel trace mode par dala */
+    background-size: calc(100% / var(--grid-w, 128)) calc(100% / var(--grid-h, 64)) !important;
 }
 
 .screen-content {

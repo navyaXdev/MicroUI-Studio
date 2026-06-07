@@ -56,19 +56,36 @@ function drawGfxText(ctx, el, color) {
     const drawX = getTextAnimationX(el, state);
     const drawY = getTextAnimationY(el, state);
     const text = getVisibleTextChars(el, state);
+    
+    let currentLine = 0;
+    let charOffset = 0;
+    const charWidth = 6 * scale;
+    const lineHeight = 8 * scale;
 
-    [...text].forEach((char, index) => {
+    [...text].forEach((char) => {
+        // SECOND FIX: Agar text selection width ko cross kare aur wrap enable ho to neeche shift ho jaye
+        if (el.wrap && (charOffset * charWidth >= el.w)) {
+            currentLine++;
+            charOffset = 0;
+        }
+
         const glyph = gfxFont[char] || gfxFont[" "];
-        glyph.forEach((row, gy) => {
-            [...row].forEach((pixel, gx) => {
-                if (pixel !== "1") return;
-                ctx.fillStyle = color;
-                ctx.fillRect(drawX + ((index * 6 + gx) * scale), drawY + (gy * scale), scale, scale);
+        const pixelX = drawX + (charOffset * charWidth);
+        const pixelY = drawY + (currentLine * lineHeight);
+
+        // Sirf tabhi render karenge jab text element box boundary ke andar ho
+        if (pixelX >= el.x && (pixelX + charWidth) <= (el.x + el.w) && pixelY >= el.y && (pixelY + lineHeight) <= (el.y + el.h)) {
+            glyph.forEach((row, gy) => {
+                [...row].forEach((pixel, gx) => {
+                    if (pixel !== "1") return;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(pixelX + (gx * scale), pixelY + (gy * scale), scale, scale);
+                });
             });
-        });
+        }
+        charOffset++;
     });
 }
-
 function drawProgress(ctx, el, color) {
     const value = animatedProgressValue(el, state);
     const fill = Math.max(0, Math.round((el.w - 4) * value / 100));

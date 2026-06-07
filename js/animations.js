@@ -5,11 +5,11 @@ export function getTextAnimationX(el, state) {
     
     switch (el.animation) {
         case "marquee":
-            return state.width - (state.frame % (state.width + textW + 8));
+            return el.x + el.w - (state.frame % (el.w + textW + 4));
         case "bounce": {
-            const travel = Math.max(1, state.width - textW);
+            const travel = Math.max(1, el.w - textW);
             const pos = state.frame % (travel * 2);
-            return pos > travel ? travel * 2 - pos : pos;
+            return el.x + (pos > travel ? travel * 2 - pos : pos);
         }
         case "glitch": {
             // कभी-कभी 1-2 पिक्सेल का रैंडम झटका (X अक्ष पर)
