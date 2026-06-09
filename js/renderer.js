@@ -63,29 +63,33 @@ function drawGfxText(ctx, el, color) {
     const lineHeight = 8 * scale;
 
     [...text].forEach((char) => {
-        // SECOND FIX: Agar text selection width ko cross kare aur wrap enable ho to neeche shift ho jaye
         if (el.wrap && (charOffset * charWidth >= el.w)) {
             currentLine++;
             charOffset = 0;
         }
 
         const glyph = gfxFont[char] || gfxFont[" "];
-        const pixelX = drawX + (charOffset * charWidth);
+        // Path logic mapping
+        const pixelX = (el.animation && el.animation !== "none") ? (drawX + (charOffset * charWidth)) : (el.x + (charOffset * charWidth));
         const pixelY = drawY + (currentLine * lineHeight);
 
-        // Sirf tabhi render karenge jab text element box boundary ke andar ho
+        // STRICT FIX: Condition ko wapas secure kar diya.
+        // Pixel tabhi draw hoga jab wo strictly yellow box boundaries ke andar aur screen limits me ho!
         if (pixelX >= el.x && (pixelX + charWidth) <= (el.x + el.w) && pixelY >= el.y && (pixelY + lineHeight) <= (el.y + el.h)) {
-            glyph.forEach((row, gy) => {
-                [...row].forEach((pixel, gx) => {
-                    if (pixel !== "1") return;
-                    ctx.fillStyle = color;
-                    ctx.fillRect(pixelX + (gx * scale), pixelY + (gy * scale), scale, scale);
+            if (pixelX >= 0 && pixelX < 128 && pixelY >= 0 && pixelY < 64) {
+                glyph.forEach((row, gy) => {
+                    [...row].forEach((pixel, gx) => {
+                        if (pixel !== "1") return;
+                        ctx.fillStyle = color;
+                        ctx.fillRect(pixelX + (gx * scale), pixelY + (gy * scale), scale, scale);
+                    });
                 });
-            });
+            }
         }
         charOffset++;
     });
 }
+
 function drawProgress(ctx, el, color) {
     const value = animatedProgressValue(el, state);
     const fill = Math.max(0, Math.round((el.w - 4) * value / 100));

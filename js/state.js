@@ -30,7 +30,6 @@ export function textPixelSize(el) {
     const text = String(el.text || "");
     const scale = Math.max(1, Number(el.size) || 1);
     
-    // Check if wrapping calculation is needed
     if (el.wrap && el.w) {
         const currentW = Math.max(6, Math.min(128, el.w));
         const charsPerLine = Math.max(1, Math.floor(currentW / (6 * scale)));
@@ -52,21 +51,19 @@ export function syncTextBounds(el) {
     if (el.type !== "text") return;
     const size = textPixelSize(el);
     
-    // CRITICAL FIX: Agar user ne manually width set ki hui hai (el.w hai), toh hum use zero ya overwrite nahi karenge
     if (!el.w) {
         el.w = size.w;
     }
     
-    // Height ko auto lines scaling tracking par shift rakhenge hamesha
     if (el.wrap) {
         el.h = size.h;
     } else {
+        // Normal text size bound auto matching
         el.h = 8 * (Math.max(1, Number(el.size) || 1));
     }
 }
 
 export function clampElement(el) {
-    // STRICT RULE: Width ko kisi bhi haal me 128 se upar jana block kiya
     el.w = Math.max(1, Math.min(128, Math.round(el.w)));
     el.h = Math.max(1, Math.min(64, Math.round(el.h)));
     el.x = Math.max(0, Math.min(128 - el.w, Math.round(el.x)));
